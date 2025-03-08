@@ -1,4 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Response, status
+from sqlalchemy.exc import IntegrityError
+from starlette.responses import JSONResponse
 
 from models.AddURLRequest import AddUrlRequest
 import datetime
@@ -34,19 +36,39 @@ def encode(counter: int):
     return ''.join(reversed(result))
 
 
+def create_short_url() -> str:
+    url_counter = redis_client.incr("url_counter")
+    return encode(url_counter)
+
+def add_url_with_retry(long_url, expiry_in_seconds, tries=1, short_url=None):
+    while tries > 0:
+        try:
+            short_url = short_url or create_short_url()
+            if not redis_client.setnx(f"urls:{short_url}", long_url):
+                raise IntegrityError
+            redis_client.expire(f"urls:{short_url}", time=expiry_in_seconds)
+            URLService().add_url(short_url, long_url, expiry_in_seconds)
+            return status.HTTP_201_CREATED, short_url
+        except IntegrityError:
+            pass
+        except Exception as ex:
+            return status.HTTP_500_INTERNAL_SERVER_ERROR, None
+        finally:
+            tries -= 1
+    return status.HTTP_409_CONFLICT, None
+
+
 @router.post("/v1/urls")
-def add_short_url(request_body: AddUrlRequest):
-    print(request_body)
+def add_short_url(request_body: AddUrlRequest, response: Response):
     short_url: str|None = request_body.short_url
     long_url: str = request_body.long_url
     expiry: datetime.datetime = request_body.expiry_time
-    if not short_url:
-        print(expiry.timestamp())
-        url_counter = redis_client.incr("url_counter")
-        short_url = encode(url_counter)
-    try:
-        URLService().add_url(short_url, long_url, expiry)
-    except Exception as ex:
-        print(ex)
-    print(short_url)
-    return {"short_url": short_url}
+    expiry_epoch:int = int(expiry.timestamp())
+    expiry_in_seconds = expiry_epoch - int(datetime.datetime.now().timestamp())
+    if expiry_in_seconds < 0:
+        response.status_code = status.HTTP_400_BAD_REQUEST
+        return
+    status_code, short_url = add_url_with_retry(long_url, expiry_in_seconds, short_url=short_url)
+    response.status_code = status_code
+    if status_code == status.HTTP_201_CREATED:
+        return {"short_url": short_url}

@@ -1,3 +1,4 @@
+import uvicorn
 from fastapi import FastAPI
 
 from routers.urls_router import router as url_router
@@ -14,3 +15,6 @@ def read_root():
 @app.post("/url")
 def add_url():
     return {"new_url": "this is new url created"}
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8001)
