@@ -72,3 +72,44 @@ def add_short_url(request_body: AddUrlRequest, response: Response):
     response.status_code = status_code
     if status_code == status.HTTP_201_CREATED:
         return {"short_url": short_url}
+
+
+class RedisKeyNotFoundException(Exception):
+    def __init__(self, *args):
+        super().__init__(*args)
+
+
+def is_url_expired(url_mapping):
+    if url_mapping.expiry_time - int(datetime.datetime.now().timestamp()) < 0:
+        return True
+    return False
+
+
+def get_url_expiry_ttl(expiry_time):
+    return expiry_time - int(datetime.datetime.now().timestamp())
+
+
+@router.get("/v1/urls")
+def get_url(short_url: str, response:Response):
+    try:
+        long_url:str = redis_client.get(f"urls:{short_url}")
+        if not long_url:
+            if redis_client.exists(f"expired_urls:{short_url}"):
+                response.status_code = status.HTTP_404_NOT_FOUND
+                return
+            else:
+                raise RedisKeyNotFoundException
+        else:
+            response.status_code = status.HTTP_302_FOUND
+            response.headers["Location"] = long_url.decode("utf-8")
+    except RedisKeyNotFoundException:
+        url_mapping = URLService().get_url(short_url)
+        if not url_mapping or is_url_expired(url_mapping):
+            # to handle expired or url not existing, next time will be present in redis
+            redis_client.set(f"expired_urls:{short_url}", "1", ex=60*60) # set expiry 1 hour
+        else:
+            redis_client.set(f"urls:{short_url}", url_mapping.long_url, ex=get_url_expiry_ttl(
+                url_mapping.expiry_time))
+            response.status_code = status.HTTP_302_FOUND
+            response.headers["Location"] = url_mapping.long_url
+
