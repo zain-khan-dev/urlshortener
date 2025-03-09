@@ -4,7 +4,7 @@ from starlette.responses import JSONResponse
 
 from models.AddURLRequest import AddUrlRequest
 import datetime
-import redis
+import redis.asyncio as redis
 
 from services.url_service import URLService
 
@@ -90,11 +90,11 @@ def get_url_expiry_ttl(expiry_time):
 
 
 @router.get("/v1/urls")
-def get_url(short_url: str, response:Response):
+async def get_url(short_url: str, response:Response):
     try:
-        long_url:str = redis_client.get(f"urls:{short_url}")
+        long_url:bytes = await redis_client.get(f"urls:{short_url}")
         if not long_url:
-            if redis_client.exists(f"expired_urls:{short_url}"):
+            if await redis_client.exists(f"expired_urls:{short_url}"):
                 response.status_code = status.HTTP_404_NOT_FOUND
                 return
             else:
@@ -106,9 +106,9 @@ def get_url(short_url: str, response:Response):
         url_mapping = URLService().get_url(short_url)
         if not url_mapping or is_url_expired(url_mapping):
             # to handle expired or url not existing, next time will be present in redis
-            redis_client.set(f"expired_urls:{short_url}", "1", ex=60*60) # set expiry 1 hour
+            await redis_client.set(f"expired_urls:{short_url}", "1", ex=60*60) # set expiry 1 hour
         else:
-            redis_client.set(f"urls:{short_url}", url_mapping.long_url, ex=get_url_expiry_ttl(
+            await redis_client.set(f"urls:{short_url}", url_mapping.long_url, ex=get_url_expiry_ttl(
                 url_mapping.expiry_time))
             response.status_code = status.HTTP_302_FOUND
             response.headers["Location"] = url_mapping.long_url
