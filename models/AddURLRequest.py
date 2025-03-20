@@ -10,6 +10,6 @@ def parse_datetime(value: str | datetime) -> datetime:
 
 
 class AddUrlRequest(BaseModel):
-    short_url: Optional[str] = None
+    alias: Optional[str] = None
     long_url: Annotated[str, Field(max_length=1000)]
     expiry_time: datetime
