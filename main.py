@@ -37,4 +37,4 @@ def add_url():
     return {"new_url": "this is new url created"}
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=9101)
+    uvicorn.run(app, host="0.0.0.0", port=9102)

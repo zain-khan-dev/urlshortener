@@ -6,3 +6,4 @@ sql_url = "sqlite:///C:/Users/zaink/Desktop/projects/systemdesign/urlshortener/n
 engine = create_engine(sql_url)
 
 Session = sessionmaker(engine)
+print(Session())

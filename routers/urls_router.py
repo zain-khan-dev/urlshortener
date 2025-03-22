@@ -36,22 +36,23 @@ def encode(counter: int):
     return ''.join(reversed(result))
 
 
-def create_short_url() -> str:
-    url_counter = redis_client.incr("url_counter")
+async def create_short_url() -> str:
+    url_counter = await redis_client.incr("url_counter")
     return encode(url_counter)
 
-def add_url_with_retry(long_url, expiry_in_seconds, tries=1, short_url=None):
+async def  add_url_with_retry(long_url, expiry_in_seconds, tries=1, short_url=None):
     while tries > 0:
         try:
-            short_url = short_url or create_short_url()
-            if not redis_client.setnx(f"urls:{short_url}", long_url):
+            short_url = short_url or await create_short_url()
+            if not await redis_client.setnx(f"urls:{short_url}", long_url):
                 raise IntegrityError
-            redis_client.expire(f"urls:{short_url}", time=expiry_in_seconds)
+            await redis_client.expire(f"urls:{short_url}", time=expiry_in_seconds)
             URLService().add_url(short_url, long_url, expiry_in_seconds)
             return status.HTTP_201_CREATED, short_url
-        except IntegrityError:
-            pass
+        except IntegrityError as ex:
+            print(repr(ex))
         except Exception as ex:
+            print(repr(ex))
             return status.HTTP_500_INTERNAL_SERVER_ERROR, None
         finally:
             tries -= 1
@@ -59,8 +60,8 @@ def add_url_with_retry(long_url, expiry_in_seconds, tries=1, short_url=None):
 
 
 @router.post("/v1/urls")
-def add_short_url(request_body: AddUrlRequest, response: Response):
-    short_url: str|None = request_body.short_url
+async def add_short_url(request_body: AddUrlRequest, response: Response):
+    alias: str|None = request_body.alias
     long_url: str = request_body.long_url
     expiry: datetime.datetime = request_body.expiry_time
     expiry_epoch:int = int(expiry.timestamp())
@@ -68,7 +69,8 @@ def add_short_url(request_body: AddUrlRequest, response: Response):
     if expiry_in_seconds < 0:
         response.status_code = status.HTTP_400_BAD_REQUEST
         return
-    status_code, short_url = add_url_with_retry(long_url, expiry_in_seconds, short_url=short_url)
+    status_code, short_url = await add_url_with_retry(long_url, expiry_in_seconds, short_url=alias)
+    print(status_code, short_url)
     response.status_code = status_code
     if status_code == status.HTTP_201_CREATED:
         return {"short_url": short_url}
