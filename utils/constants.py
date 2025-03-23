@@ -11,3 +11,8 @@ class RedisConstants:
 class HeaderConstants:
 
     LOCATION = "Location"
+
+
+class Constants:
+
+    DEFAULT_EXPIRY = 10*60

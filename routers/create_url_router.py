@@ -1,13 +1,15 @@
+from typing import Annotated, Optional
 from fastapi import APIRouter, Response, status
+from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from starlette.responses import JSONResponse
 
-from models.AddURLRequest import AddUrlRequest
-import datetime
+from datetime import datetime
 import redis.asyncio as redis
 
 from services.url_service import URLService
 from utils.constants import Constants, HeaderConstants, RedisConstants
+
 
 router = APIRouter()
 
@@ -68,45 +70,26 @@ async def  add_url_with_retry(long_url, expiry_in_seconds, tries=1, short_url=No
     return status.HTTP_409_CONFLICT, None
 
 
+class AddUrlRequest(BaseModel):
+    alias: Optional[str] = None
+    long_url: Annotated[str, Field(max_length=1000)]
+    expiry_time: Optional[datetime] = None
 
-class RedisKeyNotFoundException(Exception):
-    def __init__(self, *args):
-        super().__init__(*args)
+import time
 
-
-def is_url_expired(url_mapping):
-    if url_mapping.expiry_time - int(datetime.datetime.now().timestamp()) < 0:
-        return True
-    return False
-
-
-def get_url_expiry_ttl(expiry_time):
-    return expiry_time - int(datetime.datetime.now().timestamp())
-
-
-@router.get("/v1/urls")
-async def get_url(short_url: str, response:Response):
-    try:
-        long_url:bytes = await redis_client.get(f"{RedisConstants.URL_NAMESPACE}:{short_url}")
-        if not long_url:
-            if await redis_client.exists(f"{RedisConstants.EXPIRED_URL_KEY_NAMESPACE}:{short_url}"):
-                response.status_code = status.HTTP_404_NOT_FOUND
-                return
-            else:
-                raise RedisKeyNotFoundException
-        else:
-            print(long_url.decode("utf-8"))
-            response.status_code = status.HTTP_302_FOUND
-            response.headers[HeaderConstants.LOCATION] = long_url.decode("utf-8")
-            return response
-    except RedisKeyNotFoundException:
-        url_mapping = URLService().get_url(short_url)
-        if not url_mapping or is_url_expired(url_mapping):
-            # to handle expired or url not existing, next time will be present in redis
-            await redis_client.set(f"{RedisConstants.EXPIRED_URL_KEY_NAMESPACE}:{short_url}", RedisConstants.EXPIRED_URL_EXISTS_VALUE, ex=60*60) # set expiry 1 hour
-        else:
-            await redis_client.set(f"{RedisConstants.URL_NAMESPACE}:{short_url}", url_mapping.long_url, ex=get_url_expiry_ttl(
-                url_mapping.expiry_time))
-            response.status_code = status.HTTP_302_FOUND
-            response.headers[HeaderConstants.LOCATION] = url_mapping.long_url
-
+@router.post("/v1/urls")
+async def add_short_url(request_body: AddUrlRequest, response: Response):
+    print(request_body)
+    print("here")
+    alias: str|None = request_body.alias
+    long_url: str = request_body.long_url
+    expiry: datetime.datetime|None = request_body.expiry_time
+    expiry_epoch:int = int(expiry.timestamp()) if expiry else int(datetime.now().timestamp()) + Constants.DEFAULT_EXPIRY # 10 minutes default expiry
+    expiry_in_seconds = expiry_epoch - int(datetime.now().timestamp())
+    if expiry_in_seconds < 0:
+        return JSONResponse(content={"message": "Expiry time is before the current time"}, status_code=status.HTTP_400_BAD_REQUEST)
+    status_code, short_url = await add_url_with_retry(long_url, expiry_in_seconds, short_url=alias)
+    print(status_code, short_url)
+    response.status_code = status_code
+    if status_code == status.HTTP_201_CREATED:
+        return JSONResponse(content={"message": "Generated Succesfully", "short_url": short_url}, status_code=status.HTTP_201_CREATED)
