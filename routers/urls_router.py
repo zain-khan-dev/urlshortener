@@ -7,6 +7,7 @@ import datetime
 import redis.asyncio as redis
 
 from services.url_service import URLService
+from utils.constants import HeaderConstants, RedisConstants
 
 router = APIRouter()
 
@@ -36,6 +37,13 @@ def encode(counter: int):
     return ''.join(reversed(result))
 
 
+class CustomException(Exception):
+
+    def __init__(self, *args):
+        super().__init__(*args)
+
+
+
 async def create_short_url() -> str:
     url_counter = await redis_client.incr("url_counter")
     return encode(url_counter)
@@ -45,12 +53,13 @@ async def  add_url_with_retry(long_url, expiry_in_seconds, tries=1, short_url=No
         try:
             short_url = short_url or await create_short_url()
             if not await redis_client.setnx(f"urls:{short_url}", long_url):
-                raise IntegrityError
+                raise CustomException("Short URL is not unique enough")
             await redis_client.expire(f"urls:{short_url}", time=expiry_in_seconds)
             URLService().add_url(short_url, long_url, expiry_in_seconds)
             return status.HTTP_201_CREATED, short_url
-        except IntegrityError as ex:
-            print(repr(ex))
+        except CustomException as ex:
+            print("Integrity error", repr(ex))
+            return status.HTTP_409_CONFLICT, None
         except Exception as ex:
             print(repr(ex))
             return status.HTTP_500_INTERNAL_SERVER_ERROR, None
@@ -94,24 +103,26 @@ def get_url_expiry_ttl(expiry_time):
 @router.get("/v1/urls")
 async def get_url(short_url: str, response:Response):
     try:
-        long_url:bytes = await redis_client.get(f"urls:{short_url}")
+        long_url:bytes = await redis_client.get(f"{RedisConstants.URL_NAMESPACE}:{short_url}")
         if not long_url:
-            if await redis_client.exists(f"expired_urls:{short_url}"):
+            if await redis_client.exists(f"{RedisConstants.EXPIRED_URL_KEY_NAMESPACE}:{short_url}"):
                 response.status_code = status.HTTP_404_NOT_FOUND
                 return
             else:
                 raise RedisKeyNotFoundException
         else:
+            print(long_url.decode("utf-8"))
             response.status_code = status.HTTP_302_FOUND
-            response.headers["Location"] = long_url.decode("utf-8")
+            response.headers[HeaderConstants.LOCATION] = long_url.decode("utf-8")
+            return response
     except RedisKeyNotFoundException:
         url_mapping = URLService().get_url(short_url)
         if not url_mapping or is_url_expired(url_mapping):
             # to handle expired or url not existing, next time will be present in redis
-            await redis_client.set(f"expired_urls:{short_url}", "1", ex=60*60) # set expiry 1 hour
+            await redis_client.set(f"{RedisConstants.EXPIRED_URL_KEY_NAMESPACE}:{short_url}", RedisConstants.EXPIRED_URL_EXISTS_VALUE, ex=60*60) # set expiry 1 hour
         else:
-            await redis_client.set(f"urls:{short_url}", url_mapping.long_url, ex=get_url_expiry_ttl(
+            await redis_client.set(f"{RedisConstants.URL_NAMESPACE}:{short_url}", url_mapping.long_url, ex=get_url_expiry_ttl(
                 url_mapping.expiry_time))
             response.status_code = status.HTTP_302_FOUND
-            response.headers["Location"] = url_mapping.long_url
+            response.headers[HeaderConstants.LOCATION] = url_mapping.long_url
 

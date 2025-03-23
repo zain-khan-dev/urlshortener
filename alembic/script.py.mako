@@ -22,7 +22,7 @@ def upgrade() -> None:
     """Upgrade schema."""
     ${upgrades if upgrades else "pass"}
     op.create_table(
-        'URLs',
+        'URLS',
         sa.Column('short_url', sa.String, primary_key=True),
         sa.Column('long_url', sa.String),
         sa.Column('expiry', sa.Integer)
@@ -33,4 +33,4 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Downgrade schema."""
     ${downgrades if downgrades else "pass"}
-    op.drop_table('URLs')
+    op.drop_table('URLS')

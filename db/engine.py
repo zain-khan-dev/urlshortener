@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-sql_url = "sqlite:///C:/Users/zaink/Desktop/projects/systemdesign/urlshortener/newtable.db"
+sql_url = "sqlite:////home/zain/tempdb/newdb.db"
 
 engine = create_engine(sql_url)
 
