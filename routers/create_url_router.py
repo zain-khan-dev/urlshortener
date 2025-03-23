@@ -92,4 +92,5 @@ async def add_short_url(request_body: AddUrlRequest, response: Response):
     print(status_code, short_url)
     response.status_code = status_code
     if status_code == status.HTTP_201_CREATED:
+        short_url = "http://localhost:9000/v1/urls?short_url=" + short_url # build short url
         return JSONResponse(content={"message": "Generated Succesfully", "short_url": short_url}, status_code=status.HTTP_201_CREATED)
