@@ -1,7 +1,7 @@
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from routers.urls_router import router as url_router
+from routers.get_url_router import router as get_url_router
 from routers.create_url_router import router as create_url_router
 import logging
 
@@ -9,32 +9,14 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# # Custom middleware for logging requests
-# class LogRequestMiddleware:
-#     def __init__(self, app):
-#         self.app = app
-
-#     async def __call__(self, scope, receive, send):
-#         # Log the incoming request
-#         if scope["type"] == "http":
-#             print(scope)
-#             logger.info(f"Request: {scope['method']} {scope['path']}")
-        
-#         # Call the next middleware or route handler
-#         await self.app(scope, receive, send)
 
 app = FastAPI()
 
-# Add the custom logging middleware before the CORS middleware
-# app.add_middleware(LogRequestMiddleware)
-
-# CORS configuration
 origins = [
     "http://localhost:3000",  # Frontend origin
     "*"  # Allow all origins
 ]
 
-# Add CORS middleware globally
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -88,8 +70,8 @@ app.add_middleware(DebugPydanticMiddleware)
 
 
 # Include router
-app.include_router(url_router)
 app.include_router(create_url_router)
+app.include_router(get_url_router)
 
 # Run server with Uvicorn
 if __name__ == "__main__":

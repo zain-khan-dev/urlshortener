@@ -1,14 +1,11 @@
 from fastapi import APIRouter, Response, status
-from sqlalchemy.exc import IntegrityError
-from starlette.responses import JSONResponse
 
-from models.AddURLRequest import AddUrlRequest
 import datetime
 import redis.asyncio as redis
 
-from routers.urls_router import RedisKeyNotFoundException
 from services.url_service import URLService
-from utils.constants import Constants, HeaderConstants, RedisConstants
+from utils.constants import HeaderConstants, RedisConstants
+from utils.exception import RedisKeyNotFoundException
 
 router = APIRouter()
 
