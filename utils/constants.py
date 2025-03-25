@@ -16,3 +16,5 @@ class HeaderConstants:
 class Constants:
 
     DEFAULT_EXPIRY = 10*60
+
+    DEFAULT_MAX_TRIES = 3

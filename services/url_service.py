@@ -1,8 +1,14 @@
+from logging import getLogger
 from db.engine import engine, Session
 from db.url_table import URLTable
 from sqlalchemy.exc import SQLAlchemyError
 
+
+
+
 class URLService:
+
+    logger = getLogger(__name__)
 
 
     def add_url(self, short_url, long_url, expiry):
@@ -14,12 +20,12 @@ class URLService:
             return True
         except SQLAlchemyError as ex:
             session.rollback()  
-            print(f"Database error: {ex}")
+            self.logger.error("Database error, short_url - %s long_url - %s exception - %s", short_url, long_url,  repr(ex))
             return False
         except Exception as ex:
             if session:
                 session.rollback()
-            print(f"Unexpected error: {repr(ex)}")
+            self.logger.error(f"Unexpected error: {repr(ex)}")
             return False
         finally:
             session.close()

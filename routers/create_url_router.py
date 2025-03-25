@@ -10,6 +10,8 @@ import redis.asyncio as redis
 
 from services.url_service import URLService
 from utils.constants import Constants, HeaderConstants, RedisConstants
+from utils.exception import RedisKeyExistsException
+from utils.redis_utils import RedisUtils
 
 
 router = APIRouter()
@@ -51,28 +53,40 @@ class CustomException(Exception):
 
 
 
-async def create_short_url() -> str:
+async def generate_short_url() -> str:
     url_counter = await redis_client.incr("url_counter")
     return encode(url_counter)
 
-async def  add_url_with_retry(long_url, expiry_in_seconds, tries=1, short_url=None):
+
+
+async def add_url_with_alias(long_url, short_url, expiry_in_seconds):
+        if not await redis_client.setnx(RedisUtils.generate_active_url_redis_key(short_url), long_url):
+            raise HTTPException(status_code=409, message="URL with the alias doesn't exists")  
+        await redis_client.expire(RedisUtils.generate_active_url_redis_key(short_url), time=expiry_in_seconds)
+        URLService().add_url(short_url, long_url, expiry_in_seconds)
+        return short_url        
+
+
+async def add_url_with_retry(long_url, expiry_in_seconds, tries=3):
+    tries = Constants.DEFAULT_MAX_TRIES
     while tries > 0:
         try:
-            short_url = short_url or await create_short_url()
-            if not await redis_client.setnx(f"urls:{short_url}", long_url):
-                raise CustomException("Short URL is not unique enough")
-            await redis_client.expire(f"urls:{short_url}", time=expiry_in_seconds)
+            short_url = await generate_short_url()
+            if not await redis_client.setnx(RedisUtils.generate_active_url_redis_key(short_url), long_url):
+                raise RedisKeyExistsException("Short URL is not unique enough")
+            await redis_client.expire(RedisUtils.generate_active_url_redis_key(short_url), time=expiry_in_seconds)
             URLService().add_url(short_url, long_url, expiry_in_seconds)
-            return status.HTTP_201_CREATED, short_url
-        except CustomException as ex:
+            return short_url
+        except RedisKeyExistsException as ex:
             logger.error("Integriy error exception - %s", repr(ex))
-            raise HTTPException(status_code=409, message="URL with alias {short_url} already exists")
+            # continue if tries left
         except Exception as ex:
             logger.error("Unexpected error occured, long_url - %s short_url %s exception %s", long_url, short_url, repr(ex))
-            raise HTTPException(status_code=409, message="URL with alias {short_url} already exists")
+            raise HTTPException(status_code=500, message="Unexpected error occured, Please try again after some time" )
         finally:
             tries -= 1
-    return status.HTTP_409_CONFLICT, None
+    raise HTTPException(status_code=409, message="Max retry exceeded, please try after some time")
+
 
 
 class AddUrlRequest(BaseModel):
@@ -93,9 +107,10 @@ async def add_short_url(request_body: AddUrlRequest, response: Response):
     expiry_in_seconds = expiry_epoch - int(datetime.now().timestamp())
     if expiry_in_seconds < 0:
         return JSONResponse(content={"message": "Expiry time is before the current time"}, status_code=status.HTTP_400_BAD_REQUEST)
-    status_code, short_url = await add_url_with_retry(long_url, expiry_in_seconds, short_url=alias)
-    print(status_code, short_url)
-    response.status_code = status_code
-    if status_code == status.HTTP_201_CREATED:
-        short_url = "http://localhost:9000/v1/urls?short_url=" + short_url # build short url
-        return JSONResponse(content={"message": "Generated Succesfully", "short_url": short_url}, status_code=status.HTTP_201_CREATED)
+    if alias:
+        short_url = await add_url_with_alias(long_url, expiry_in_seconds, alias)
+    else:
+        short_url = await add_url_with_retry(long_url, expiry_in_seconds)
+    response.status_code = status.HTTP_201_CREATED
+    short_url = "http://localhost:9000/v1/urls?short_url=" + short_url # build short url
+    return JSONResponse(content={"message": "Generated Succesfully", "short_url": short_url}, status_code=status.HTTP_201_CREATED)
