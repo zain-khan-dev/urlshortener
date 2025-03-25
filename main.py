@@ -26,49 +26,6 @@ app.add_middleware(
 )
 
 
-from fastapi import FastAPI, Request, Response
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
-
-import traceback
-import logging
-
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger("custom_middleware")
-
-class DebugPydanticMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        try:
-            # Process the request normally
-            response = await call_next(request)
-            return response
-        except RequestValidationError as e:
-            # If there's a validation error, log the details
-            logger.error(f"Validation error occurred: {e}")
-            
-            # Log the detailed error traceback for debugging
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            
-            # You can also log the request body if necessary for debugging
-            request_body = await request.json()
-            logger.error(f"Request body: {request_body}")
-            
-            # Customize the error response
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "message": "Validation failed",
-                    "details": e.errors(),
-                    "request_body": request_body
-                }
-            )
-
-
-
-app.add_middleware(DebugPydanticMiddleware)
-
-
 # Include router
 app.include_router(create_url_router)
 app.include_router(get_url_router)

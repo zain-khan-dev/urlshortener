@@ -1,5 +1,6 @@
+from logging import getLogger
 from typing import Annotated, Optional
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from starlette.responses import JSONResponse
@@ -14,6 +15,10 @@ from utils.constants import Constants, HeaderConstants, RedisConstants
 router = APIRouter()
 
 redis_client = redis.Redis()
+
+
+logger = getLogger(__name__)
+
 
 def convert_to_digit(val: int) -> chr:
     if 0 <= val < 26:
@@ -60,11 +65,11 @@ async def  add_url_with_retry(long_url, expiry_in_seconds, tries=1, short_url=No
             URLService().add_url(short_url, long_url, expiry_in_seconds)
             return status.HTTP_201_CREATED, short_url
         except CustomException as ex:
-            print("Integrity error", repr(ex))
-            return status.HTTP_409_CONFLICT, None
+            logger.error("Integriy error exception - %s", repr(ex))
+            raise HTTPException(status_code=409, message="URL with alias {short_url} already exists")
         except Exception as ex:
-            print(repr(ex))
-            return status.HTTP_500_INTERNAL_SERVER_ERROR, None
+            logger.error("Unexpected error occured, long_url - %s short_url %s exception %s", long_url, short_url, repr(ex))
+            raise HTTPException(status_code=409, message="URL with alias {short_url} already exists")
         finally:
             tries -= 1
     return status.HTTP_409_CONFLICT, None
